@@ -3,6 +3,7 @@ from pydantic import BaseModel
 class LearnerCreate(BaseModel):
     name: str
     email: str
+    password: str  
 
 class LearnerRead(BaseModel):
     id: int
@@ -26,7 +27,8 @@ class CredentialRead(BaseModel):
 from pydantic import BaseModel
 
 class LoginRequest(BaseModel):
-    email: str  # for now, simple email login
+    email: str
+    password: str  
 
 class TokenResponse(BaseModel):
     access_token: str

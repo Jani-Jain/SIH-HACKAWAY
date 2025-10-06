@@ -3,11 +3,21 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime, timedelta
-from jose import JWTError, ExpiredSignatureError
-
+from jose import JWTError, jwt
+from sqlalchemy import func
 from database import engine, Base, SessionLocal
 from models import Learner, Credential
 from schemas import LearnerCreate, LearnerRead, CredentialCreate, CredentialRead, LoginRequest, TokenResponse
+from passlib.context import CryptContext
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
 # ------------------ FastAPI app ------------------
 app = FastAPI()
@@ -60,7 +70,12 @@ def get_current_learner(token: str = Depends(oauth2_scheme), db: Session = Depen
 # ------------------ Learner endpoints ------------------
 @app.post("/learners/", response_model=LearnerRead)
 def create_learner(learner: LearnerCreate, db: Session = Depends(get_db)):
-    db_learner = Learner(name=learner.name, email=learner.email)
+    hashed_password = get_password_hash(learner.password)
+    db_learner = Learner(
+        name=learner.name, 
+        email=learner.email, 
+        hashed_password=hashed_password
+    )
     db.add(db_learner)
     db.commit()
     db.refresh(db_learner)
@@ -88,11 +103,19 @@ def read_credentials_for_learner(learner_id: int, db: Session = Depends(get_db))
     return db.query(Credential).filter(Credential.learner_id == learner_id).all()
 
 # ------------------ JWT Login ------------------
+
 @app.post("/login/", response_model=TokenResponse)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     learner = db.query(Learner).filter(Learner.email == login_data.email).first()
-    if not learner:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email")
+    
+    # We now check for the learner AND verify the password
+    if not learner or not verify_password(login_data.password, learner.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = create_access_token({"sub": str(learner.id)})
     return {"access_token": token, "token_type": "bearer"}
 
