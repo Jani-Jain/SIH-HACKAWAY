@@ -9,6 +9,8 @@ from database import engine, Base, SessionLocal
 from models import Learner, Credential
 from schemas import LearnerCreate, LearnerRead, CredentialCreate, CredentialRead, LoginRequest, TokenResponse
 from passlib.context import CryptContext
+from fastapi import Depends
+from auth import get_current_user
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -39,15 +41,13 @@ def get_db():
 # ------------------ JWT setup ------------------
 SECRET_KEY = "your-super-secret-key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def create_access_token(data: dict, expires_delta: timedelta |None = None):
     to_encode = data.copy()
-    if expires_delta is None:
-        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
@@ -107,6 +107,8 @@ def read_credentials_for_learner(learner_id: int, db: Session = Depends(get_db))
 @app.post("/login/", response_model=TokenResponse)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     learner = db.query(Learner).filter(Learner.email == login_data.email).first()
+    token = create_access_token({"sub": str(learner)}) 
+
     
     # We now check for the learner AND verify the password
     if not learner or not verify_password(login_data.password, learner.hashed_password):
